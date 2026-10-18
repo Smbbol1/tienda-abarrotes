@@ -10,6 +10,14 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: inventory
+    description: Inventario de productos
+  - name: sales
+    description: Registro y consulta de ventas
+  - name: reports
+    description: Resúmenes y reportes de la tienda
+  - name: backup
+    description: Respaldo y restauración de datos
 paths:
   /healthz:
     get:
@@ -24,6 +32,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [inventory]
+      summary: Listar productos
+      responses:
+        "200":
+          description: Productos registrados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      operationId: createProduct
+      tags: [inventory]
+      summary: Registrar un producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Producto registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+  /products/{id}:
+    patch:
+      operationId: updateProduct
+      tags: [inventory]
+      summary: Actualizar un producto
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdate"
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Producto no encontrado
+    delete:
+      operationId: deleteProduct
+      tags: [inventory]
+      summary: Eliminar un producto sin ventas asociadas
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Producto eliminado
+        "409":
+          description: No se puede eliminar un producto con ventas registradas
+  /sales:
+    get:
+      operationId: listSales
+      tags: [sales]
+      summary: Listar ventas recientes
+      responses:
+        "200":
+          description: Ventas recientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sale"
+    post:
+      operationId: createSale
+      tags: [sales]
+      summary: Registrar una venta y descontar inventario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleInput"
+      responses:
+        "201":
+          description: Venta registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sale"
+        "400":
+          description: Cantidad inválida o inventario insuficiente
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [reports]
+      summary: Obtener el resumen principal del negocio
+      responses:
+        "200":
+          description: Resumen del negocio
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /reports:
+    get:
+      operationId: getReports
+      tags: [reports]
+      summary: Obtener reportes de ventas e inventario
+      responses:
+        "200":
+          description: Reporte general
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reports"
+  /backup:
+    get:
+      operationId: downloadBackup
+      tags: [backup]
+      summary: Exportar todos los productos y las ventas
+      responses:
+        "200":
+          description: Respaldo completo en formato JSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Backup"
+    post:
+      operationId: restoreBackup
+      tags: [backup]
+      summary: Restaurar todos los datos desde un respaldo JSON
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Backup"
+      responses:
+        "200":
+          description: Respaldo validado y restaurado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreResult"
+        "400":
+          description: El archivo no es un respaldo válido
 components:
   schemas:
     HealthStatus:
@@ -33,4 +201,161 @@ components:
           type: string
       required:
         - status
+    Product:
+      type: object
+      required: [id, name, price, quantity, supplier, lowStockThreshold, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        price: { type: number }
+        quantity: { type: integer }
+        supplier: { type: string }
+        lowStockThreshold: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProductInput:
+      type: object
+      required: [name, price, quantity, supplier]
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        quantity: { type: integer, minimum: 0 }
+        supplier: { type: string, minLength: 1 }
+        lowStockThreshold: { type: integer, minimum: 0, default: 5 }
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        quantity: { type: integer, minimum: 0 }
+        supplier: { type: string, minLength: 1 }
+        lowStockThreshold: { type: integer, minimum: 0 }
+    SaleItemInput:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: integer, minimum: 1 }
+        quantity: { type: integer, minimum: 1 }
+    SaleInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SaleItemInput"
+    SaleItem:
+      type: object
+      required: [id, productId, productName, unitPrice, quantity, subtotal]
+      properties:
+        id: { type: integer }
+        productId: { type: integer }
+        productName: { type: string }
+        unitPrice: { type: number }
+        quantity: { type: integer }
+        subtotal: { type: number }
+    Sale:
+      type: object
+      required: [id, total, createdAt, items]
+      properties:
+        id: { type: integer }
+        total: { type: number }
+        createdAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleItem"
+    Dashboard:
+      type: object
+      required: [salesToday, salesThisMonth, productCount, lowStockCount, recentSales, lowStockProducts]
+      properties:
+        salesToday: { type: number }
+        salesThisMonth: { type: number }
+        productCount: { type: integer }
+        lowStockCount: { type: integer }
+        recentSales:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sale"
+        lowStockProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    Reports:
+      type: object
+      required: [totalSales, salesCount, averageSale, dailySales, lowStockProducts]
+      properties:
+        totalSales: { type: number }
+        salesCount: { type: integer }
+        averageSale: { type: number }
+        dailySales:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailySale"
+        lowStockProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+    DailySale:
+      type: object
+      required: [date, total, count]
+      properties:
+        date: { type: string, format: date }
+        total: { type: number }
+        count: { type: integer }
+    Backup:
+      type: object
+      required: [format, version, createdAt, products, sales]
+      properties:
+        format: { type: string, enum: [tienda-abarrotes-backup] }
+        version: { type: integer, enum: [1] }
+        createdAt: { type: string, format: date-time }
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupProduct"
+        sales:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupSale"
+    BackupProduct:
+      type: object
+      required: [id, name, price, quantity, supplier, lowStockThreshold, createdAt, updatedAt]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        quantity: { type: integer, minimum: 0 }
+        supplier: { type: string }
+        lowStockThreshold: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BackupSaleItem:
+      type: object
+      required: [id, productId, productName, unitPrice, quantity, subtotal]
+      properties:
+        id: { type: integer, minimum: 1 }
+        productId: { type: integer, minimum: 1 }
+        productName: { type: string, minLength: 1 }
+        unitPrice: { type: number, minimum: 0 }
+        quantity: { type: integer, minimum: 1 }
+        subtotal: { type: number, minimum: 0 }
+    BackupSale:
+      type: object
+      required: [id, total, createdAt, items]
+      properties:
+        id: { type: integer, minimum: 1 }
+        total: { type: number, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupSaleItem"
+    RestoreResult:
+      type: object
+      required: [productsRestored, salesRestored]
+      properties:
+        productsRestored: { type: integer }
+        salesRestored: { type: integer }
 

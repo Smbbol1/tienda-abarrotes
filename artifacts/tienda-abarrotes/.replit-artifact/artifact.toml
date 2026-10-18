@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Tienda de Abarrotes"
+description = "Aplicación web en español para gestionar inventario, registrar ventas, consultar reportes y respaldar o restaurar los datos de una tienda de abarrotes."
+version = "1.0.0"
+id = "artifacts/tienda-abarrotes"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21989
+
+[services.development]
+run = "pnpm --filter @workspace/tienda-abarrotes run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tienda-abarrotes", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tienda-abarrotes/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21989"
+BASE_PATH = "/"
