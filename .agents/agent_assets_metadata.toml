@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "_2yc_SFzgINtjsg3FRSkK"
+uri = "file://tienda-abarrotes-proyecto.zip"
+type = "unspecified"
+title = "Descargar código del proyecto"
+description = "Archivo ZIP con el código y la configuración de Tienda de Abarrotes."
+logical_id = "b15a7988-d10a-42d2-8af0-ad007282fb3e"
+content_hash = "sha256:9d975e630ad4210bc489dc7f8d2e03223df42c45f33c4623ab3b2458a2eaf53f"
+size = 1817435
+mtime_ms = 1792364796739
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:e708e006-f40f-4156-9115-887320a89083/b15a7988-d10a-42d2-8af0-ad007282fb3e/ba925d4c-fb62-4301-9bb9-42815b3c1556"
+storage_version_token = "1792365269269531"
+content_type = "application/octet-stream"
