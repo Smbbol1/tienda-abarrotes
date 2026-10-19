@@ -25,6 +25,26 @@ const queryClient = new QueryClient({
 const money = (amount: number) => new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(amount || 0);
 const shortDate = (value: string) => new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const dateLabel = () => new Intl.DateTimeFormat('es-BO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+const INVALID_API_LIST_MESSAGE = 'El servidor devolvió un formato inesperado. Verifica la URL del API y vuelve a intentarlo.';
+
+function extractApiList<T>(value: unknown, resource: 'products' | 'sales'): T[] | null {
+  if (Array.isArray(value)) return value as T[];
+  if (!value || typeof value !== 'object') return null;
+
+  const record = value as Record<string, unknown>;
+  const directCandidates = [record[resource], record.data, record.items, record.results];
+  const directArray = directCandidates.find(Array.isArray);
+  if (Array.isArray(directArray)) return directArray as T[];
+
+  if (record.data && typeof record.data === 'object') {
+    const nested = record.data as Record<string, unknown>;
+    const nestedCandidates = [nested[resource], nested.items, nested.results];
+    const nestedArray = nestedCandidates.find(Array.isArray);
+    if (Array.isArray(nestedArray)) return nestedArray as T[];
+  }
+
+  return null;
+}
 
 type ToastState = { text: string; kind?: 'success' | 'error' } | null;
 function useToastMessage() {
@@ -70,8 +90,8 @@ function PageHeading({ eyebrow, title, subtitle, action }: { eyebrow: string; ti
 function LoadingRows({ count = 4 }: { count?: number }) {
   return <div aria-label="Cargando información">{Array.from({ length: count }, (_, i) => <div className="skeleton-row" key={i}>{[1, 2, 3, 4].map(n => <div className="loading-line" key={n} />)}</div>)}</div>;
 }
-function ErrorMessage({ retry }: { retry: () => void }) {
-  return <div className="error-box"><span>No pudimos cargar la información. Revisa tu conexión e inténtalo de nuevo.</span><button className="button button-soft" onClick={retry}>Reintentar</button></div>;
+function ErrorMessage({ retry, message = 'No pudimos cargar la información. Revisa tu conexión e inténtalo de nuevo.' }: { retry: () => void; message?: string }) {
+  return <div className="error-box"><span>{message}</span><button className="button button-soft" onClick={retry}>Reintentar</button></div>;
 }
 function EmptyState({ title, detail, icon: Icon = Package }: { title: string; detail: string; icon?: typeof Package }) {
   return <div className="empty-state"><div className="empty-icon"><Icon size={20} /></div><strong>{title}</strong><span>{detail}</span></div>;
@@ -138,7 +158,9 @@ function InventoryPage() {
   const { toast, show } = useToastMessage();
   const [search, setSearch] = useState(''); const [stockFilter, setStockFilter] = useState('todos');
   const [dialog, setDialog] = useState<Product | 'new' | null>(null);
-  const products = (data as Product[] | undefined) ?? [];
+  const productResponse = extractApiList<Product>(data, 'products');
+  const products = productResponse ?? [];
+  const invalidProductsResponse = data !== undefined && productResponse === null;
   const filtered = useMemo(() => products.filter(product => {
     const matches = `${product.name} ${product.supplier}`.toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es'));
     return matches && (stockFilter === 'todos' || (stockFilter === 'bajo' ? product.quantity <= product.lowStockThreshold : product.quantity > product.lowStockThreshold));
@@ -163,7 +185,7 @@ function InventoryPage() {
     <PageHeading eyebrow="Control de existencias" title="Inventario" subtitle={`${products.length} productos en tu tienda. Mantén precios y cantidades al corriente.`} action={<button className="button button-primary" onClick={() => setDialog('new')} data-testid="button-add-product"><Plus size={16} /> Nuevo producto</button>} />
     <div className="panel inventory-panel">
       <div className="panel-head"><div><h2 className="panel-title">Tus productos</h2><div className="panel-caption">Busca, revisa y actualiza tus artículos</div></div><div className="toolbar"><label className="searchbox"><Search size={15} /><input aria-label="Buscar productos" data-testid="input-search-products" placeholder="Buscar producto o proveedor" value={search} onChange={e => setSearch(e.target.value)} /></label><select className="filter-select" aria-label="Filtrar existencias" value={stockFilter} onChange={e => setStockFilter(e.target.value)}><option value="todos">Todos</option><option value="bajo">Stock bajo</option><option value="normal">Stock suficiente</option></select></div></div>
-      {isError ? <div style={{ padding: 18 }}><ErrorMessage retry={() => void refetch()} /></div> : isLoading ? <LoadingRows count={6} /> : filtered.length ? <div className="inventory-table-wrap"><table className="data-table"><thead><tr><th>Producto</th><th>Proveedor</th><th>Precio</th><th>Existencias</th><th className="table-hide-mobile">Mínimo</th><th></th></tr></thead><tbody>{filtered.map(product => <tr key={product.id} data-testid={`row-product-${product.id}`}><td><div className="product-name">{product.name}</div><div className="subtle">Actualizado {new Intl.DateTimeFormat('es-BO', { day: 'numeric', month: 'short' }).format(new Date(product.updatedAt))}</div></td><td>{product.supplier || '—'}</td><td className="mono">{money(product.price)}</td><td><span className={`badge ${product.quantity <= product.lowStockThreshold ? 'badge-warn' : 'badge-good'}`}>{product.quantity} {product.quantity === 1 ? 'unidad' : 'unidades'}</span></td><td className="table-hide-mobile mono">{product.lowStockThreshold}</td><td><div style={{ display: 'flex', justifyContent: 'flex-end', gap: 3 }}><button className="button button-icon" aria-label={`Editar ${product.name}`} title="Editar" onClick={() => setDialog(product)} data-testid={`button-edit-product-${product.id}`}><Pencil size={15} /></button><button className="button button-icon" aria-label={`Eliminar ${product.name}`} title="Eliminar" onClick={() => deleteProduct(product)} data-testid={`button-delete-product-${product.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState title={search || stockFilter !== 'todos' ? 'No encontramos productos' : 'Tu inventario está vacío'} detail={search || stockFilter !== 'todos' ? 'Prueba con otra búsqueda o filtro.' : 'Agrega el primer producto para comenzar.'} />}
+      {isError || invalidProductsResponse ? <div style={{ padding: 18 }}><ErrorMessage retry={() => void refetch()} message={invalidProductsResponse ? INVALID_API_LIST_MESSAGE : undefined} /></div> : isLoading ? <LoadingRows count={6} /> : filtered.length ? <div className="inventory-table-wrap"><table className="data-table"><thead><tr><th>Producto</th><th>Proveedor</th><th>Precio</th><th>Existencias</th><th className="table-hide-mobile">Mínimo</th><th></th></tr></thead><tbody>{filtered.map(product => <tr key={product.id} data-testid={`row-product-${product.id}`}><td><div className="product-name">{product.name}</div><div className="subtle">Actualizado {new Intl.DateTimeFormat('es-BO', { day: 'numeric', month: 'short' }).format(new Date(product.updatedAt))}</div></td><td>{product.supplier || '—'}</td><td className="mono">{money(product.price)}</td><td><span className={`badge ${product.quantity <= product.lowStockThreshold ? 'badge-warn' : 'badge-good'}`}>{product.quantity} {product.quantity === 1 ? 'unidad' : 'unidades'}</span></td><td className="table-hide-mobile mono">{product.lowStockThreshold}</td><td><div style={{ display: 'flex', justifyContent: 'flex-end', gap: 3 }}><button className="button button-icon" aria-label={`Editar ${product.name}`} title="Editar" onClick={() => setDialog(product)} data-testid={`button-edit-product-${product.id}`}><Pencil size={15} /></button><button className="button button-icon" aria-label={`Eliminar ${product.name}`} title="Eliminar" onClick={() => deleteProduct(product)} data-testid={`button-delete-product-${product.id}`}><Trash2 size={15} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState title={search || stockFilter !== 'todos' ? 'No encontramos productos' : 'Tu inventario está vacío'} detail={search || stockFilter !== 'todos' ? 'Prueba con otra búsqueda o filtro.' : 'Agrega el primer producto para comenzar.'} />}
     </div>
     {dialog && <ProductDialog product={dialog === 'new' ? undefined : dialog} close={() => setDialog(null)} save={save} busy={create.isPending || update.isPending} />}
     <Toast state={toast} />
@@ -178,8 +200,12 @@ function SalesPage() {
   const createSale = useCreateSale();
   const [cart, setCart] = useState<CartLine[]>([]); const [search, setSearch] = useState('');
   const { toast, show } = useToastMessage();
-  const products = (productData as Product[] | undefined) ?? [];
-  const sales = (salesData as Sale[] | undefined) ?? [];
+  const productResponse = extractApiList<Product>(productData, 'products');
+  const saleResponse = extractApiList<Sale>(salesData, 'sales');
+  const products = productResponse ?? [];
+  const sales = saleResponse ?? [];
+  const invalidProductsResponse = productData !== undefined && productResponse === null;
+  const invalidSalesResponse = salesData !== undefined && saleResponse === null;
   const available = products.filter(p => p.quantity > 0 && p.name.toLowerCase().includes(search.toLowerCase()));
   const total = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
   const add = (product: Product) => setCart(lines => {
@@ -205,11 +231,10 @@ function SalesPage() {
   };
   return <Shell><div className="content">
     <PageHeading eyebrow="Caja rápida" title="Registrar venta" subtitle="Agrega productos al ticket y confirma el cobro." />
-    {productsError && <ErrorMessage retry={() => void retryProducts()} />}
     <div className="sale-layout">
       <section className="panel">
         <div className="panel-head"><div><h2 className="panel-title">Productos disponibles</h2><div className="panel-caption">Elige un artículo para añadirlo al ticket</div></div><label className="searchbox"><Search size={15} /><input aria-label="Buscar artículos" placeholder="Buscar artículo" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-        {productsLoading ? <LoadingRows count={5} /> : available.length ? <div className="sale-product-grid">{available.map(product => <button className="sale-product" key={product.id} onClick={() => add(product)} data-testid={`button-sale-product-${product.id}`}><strong>{product.name}</strong><span>{money(product.price)} <span style={{ float: 'right' }}>{product.quantity} disponibles</span></span></button>)}</div> : <EmptyState title={search ? 'Sin coincidencias' : 'No hay productos disponibles'} detail={search ? 'Intenta con otro nombre.' : 'Agrega existencias desde Inventario.'} icon={ShoppingBasket} />}
+        {productsLoading ? <LoadingRows count={5} /> : productsError || invalidProductsResponse ? <div className="panel-body"><ErrorMessage retry={() => void retryProducts()} message={invalidProductsResponse ? INVALID_API_LIST_MESSAGE : undefined} /></div> : available.length ? <div className="sale-product-grid">{available.map(product => <button className="sale-product" key={product.id} onClick={() => add(product)} data-testid={`button-sale-product-${product.id}`}><strong>{product.name}</strong><span>{money(product.price)} <span style={{ float: 'right' }}>{product.quantity} disponibles</span></span></button>)}</div> : <EmptyState title={search ? 'Sin coincidencias' : 'No hay productos disponibles'} detail={search ? 'Intenta con otro nombre.' : 'Agrega existencias desde Inventario.'} icon={ShoppingBasket} />}
       </section>
       <section className="panel sale-cart">
         <div className="panel-head"><div><h2 className="panel-title">Ticket de venta</h2><div className="panel-caption">{cart.reduce((sum, item) => sum + item.quantity, 0)} artículos</div></div><div className="stock-dot"><ShoppingCart size={16} /></div></div>
@@ -221,7 +246,7 @@ function SalesPage() {
     </div>
     <section className="panel" style={{ marginTop: 18 }}>
       <div className="panel-head"><div><h2 className="panel-title">Ventas recientes</h2><div className="panel-caption">Registro de caja</div></div><span className="badge badge-neutral">{sales.length} ventas</span></div>
-      <div className="panel-body">{salesError ? <ErrorMessage retry={() => void retrySales()} /> : salesLoading ? <LoadingRows count={3} /> : sales.length ? <div className="inventory-table-wrap"><table className="data-table"><thead><tr><th>Folio</th><th>Fecha y hora</th><th>Detalle</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead><tbody>{[...sales].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 8).map(sale => <tr key={sale.id} data-testid={`row-sale-${sale.id}`}><td className="mono">#{String(sale.id).padStart(4, '0')}</td><td>{shortDate(sale.createdAt)}</td><td>{sale.items?.map(item => `${item.quantity} × ${item.productName}`).join(', ')}</td><td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{money(sale.total)}</td></tr>)}</tbody></table></div> : <EmptyState title="Todavía no hay ventas" detail="Las ventas que registres aparecerán aquí." />}</div>
+       <div className="panel-body">{salesError || invalidSalesResponse ? <ErrorMessage retry={() => void retrySales()} message={invalidSalesResponse ? INVALID_API_LIST_MESSAGE : undefined} /> : salesLoading ? <LoadingRows count={3} /> : sales.length ? <div className="inventory-table-wrap"><table className="data-table"><thead><tr><th>Folio</th><th>Fecha y hora</th><th>Detalle</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead><tbody>{[...sales].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 8).map(sale => <tr key={sale.id} data-testid={`row-sale-${sale.id}`}><td className="mono">#{String(sale.id).padStart(4, '0')}</td><td>{shortDate(sale.createdAt)}</td><td>{sale.items?.map(item => `${item.quantity} × ${item.productName}`).join(', ')}</td><td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>{money(sale.total)}</td></tr>)}</tbody></table></div> : <EmptyState title="Todavía no hay ventas" detail="Las ventas que registres aparecerán aquí." />}</div>
     </section>
     <Toast state={toast} />
   </div></Shell>;
